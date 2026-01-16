@@ -65,7 +65,6 @@ inventoryRouter.post(
 
     const { branchId, productId, quantity, note } = parsed.data;
 
-    // Ensure branch/product exist
     const [branch, product] = await Promise.all([
       prisma.branch.findUnique({ where: { id: branchId } }),
       prisma.product.findUnique({ where: { id: productId } }),
@@ -74,27 +73,29 @@ inventoryRouter.post(
     if (!branch) return res.status(404).json({ message: "Branch not found" });
     if (!product) return res.status(404).json({ message: "Product not found" });
 
-    // Upsert StockItem (create if not exists)
-    const item = await prisma.stockItem.upsert({
-      where: { branchId_productId: { branchId, productId } },
-      create: { branchId, productId, quantity },
-      update: { quantity: { increment: quantity } },
-      include: { product: true, branch: true },
+    const result = await prisma.$transaction(async (tx) => {
+      const item = await tx.stockItem.upsert({
+        where: { branchId_productId: { branchId, productId } },
+        create: { branchId, productId, quantity },
+        update: { quantity: { increment: quantity } },
+        include: { product: true, branch: true },
+      });
+
+      const txn = await tx.stockTxn.create({
+        data: {
+          type: "RECEIVE",
+          branchId,
+          productId,
+          qtyChange: quantity,
+          note,
+          createdById: req.user.id,
+        },
+      });
+
+      return { item, txn };
     });
 
-    // Create txn record
-    const txn = await prisma.stockTxn.create({
-      data: {
-        type: "RECEIVE",
-        branchId,
-        productId,
-        qtyChange: quantity,
-        note,
-        createdById: req.user.id,
-      },
-    });
-
-    res.status(201).json({ item, txn });
+    res.status(201).json(result);
   }
 );
 
@@ -119,32 +120,179 @@ inventoryRouter.post(
 
     const { branchId, productId, newQuantity, note } = parsed.data;
 
-    const existing = await prisma.stockItem.findUnique({
-      where: { branchId_productId: { branchId, productId } },
+    const [branch, product] = await Promise.all([
+      prisma.branch.findUnique({ where: { id: branchId } }),
+      prisma.product.findUnique({ where: { id: productId } }),
+    ]);
+
+    if (!branch) return res.status(404).json({ message: "Branch not found" });
+    if (!product) return res.status(404).json({ message: "Product not found" });
+
+    const result = await prisma.$transaction(async (tx) => {
+      const existing = await tx.stockItem.findUnique({
+        where: { branchId_productId: { branchId, productId } },
+      });
+
+      const oldQty = existing?.quantity ?? 0;
+      const change = newQuantity - oldQty;
+
+      const item = await tx.stockItem.upsert({
+        where: { branchId_productId: { branchId, productId } },
+        create: { branchId, productId, quantity: newQuantity },
+        update: { quantity: newQuantity },
+        include: { product: true, branch: true },
+      });
+
+      const txn = await tx.stockTxn.create({
+        data: {
+          type: "ADJUST",
+          branchId,
+          productId,
+          qtyChange: change,
+          note: note || "Manual adjustment",
+          createdById: req.user.id,
+        },
+      });
+
+      return { item, txn };
     });
 
-    const oldQty = existing?.quantity ?? 0;
-    const change = newQuantity - oldQty;
+    res.json(result);
+  }
+);
 
-    const item = await prisma.stockItem.upsert({
-      where: { branchId_productId: { branchId, productId } },
-      create: { branchId, productId, quantity: newQuantity },
-      update: { quantity: newQuantity },
-      include: { product: true, branch: true },
-    });
+const reduceSchema = z.object({
+  branchId: z.string().uuid(),
+  productId: z.string().uuid(),
+  quantity: z.number().int().positive(),
+  note: z.string().optional(),
+});
 
-    const txn = await prisma.stockTxn.create({
-      data: {
-        type: "ADJUST",
-        branchId,
-        productId,
-        qtyChange: change,
-        note: note || "Manual adjustment",
-        createdById: req.user.id,
-      },
-    });
+/**
+ * POST /inventory/sale
+ * - Manager sells stock (quantity decreases)
+ */
+inventoryRouter.post(
+  "/inventory/sale",
+  requireAuth,
+  requireRole("MANAGER"),
+  async (req: any, res) => {
+    const parsed = reduceSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
 
-    res.json({ item, txn });
+    const { branchId, productId, quantity, note } = parsed.data;
+
+    const [branch, product] = await Promise.all([
+      prisma.branch.findUnique({ where: { id: branchId } }),
+      prisma.product.findUnique({ where: { id: productId } }),
+    ]);
+
+    if (!branch) return res.status(404).json({ message: "Branch not found" });
+    if (!product) return res.status(404).json({ message: "Product not found" });
+
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        const existing = await tx.stockItem.findUnique({
+          where: { branchId_productId: { branchId, productId } },
+        });
+
+        const oldQty = existing?.quantity ?? 0;
+        if (oldQty < quantity) {
+          throw new Error(`Not enough stock. Available: ${oldQty}`);
+        }
+
+        const item = await tx.stockItem.update({
+          where: { branchId_productId: { branchId, productId } },
+          data: { quantity: { decrement: quantity } },
+          include: { product: true, branch: true },
+        });
+
+        const txn = await tx.stockTxn.create({
+          data: {
+            type: "SALE",
+            branchId,
+            productId,
+            qtyChange: -quantity,
+            note: note || "Sale",
+            createdById: req.user.id,
+          },
+        });
+
+        return { item, txn };
+      });
+
+      res.status(201).json(result);
+    } catch (e: any) {
+      const msg = e?.message || "Sale failed";
+      if (msg.startsWith("Not enough stock")) {
+        return res.status(409).json({ message: msg });
+      }
+      return res.status(500).json({ message: "Server error" });
+    }
+  }
+);
+
+/**
+ * POST /inventory/damage
+ * - Manager records damaged stock (quantity decreases)
+ */
+inventoryRouter.post(
+  "/inventory/damage",
+  requireAuth,
+  requireRole("MANAGER"),
+  async (req: any, res) => {
+    const parsed = reduceSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
+
+    const { branchId, productId, quantity, note } = parsed.data;
+
+    const [branch, product] = await Promise.all([
+      prisma.branch.findUnique({ where: { id: branchId } }),
+      prisma.product.findUnique({ where: { id: productId } }),
+    ]);
+
+    if (!branch) return res.status(404).json({ message: "Branch not found" });
+    if (!product) return res.status(404).json({ message: "Product not found" });
+
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        const existing = await tx.stockItem.findUnique({
+          where: { branchId_productId: { branchId, productId } },
+        });
+
+        const oldQty = existing?.quantity ?? 0;
+        if (oldQty < quantity) {
+          throw new Error(`Not enough stock. Available: ${oldQty}`);
+        }
+
+        const item = await tx.stockItem.update({
+          where: { branchId_productId: { branchId, productId } },
+          data: { quantity: { decrement: quantity } },
+          include: { product: true, branch: true },
+        });
+
+        const txn = await tx.stockTxn.create({
+          data: {
+            type: "DAMAGE",
+            branchId,
+            productId,
+            qtyChange: -quantity,
+            note: note || "Damaged",
+            createdById: req.user.id,
+          },
+        });
+
+        return { item, txn };
+      });
+
+      res.status(201).json(result);
+    } catch (e: any) {
+      const msg = e?.message || "Damage failed";
+      if (msg.startsWith("Not enough stock")) {
+        return res.status(409).json({ message: msg });
+      }
+      return res.status(500).json({ message: "Server error" });
+    }
   }
 );
 
