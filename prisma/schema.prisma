@@ -25,6 +25,8 @@ model User {
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  stockTxns    StockTxn[]
 }
 
 model Branch {
@@ -35,4 +37,92 @@ model Branch {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  stockItems StockItem[]
+  stockTxns  StockTxn[]
+}
+
+/**
+ * Categories support sub-categories (parentId).
+ * Example: Stationery -> Pens
+ */
+model Category {
+  id        String     @id @default(uuid())
+  name      String
+  parentId  String?
+  parent    Category?  @relation("CategoryParentChild", fields: [parentId], references: [id])
+  children  Category[] @relation("CategoryParentChild")
+  products  Product[]
+  isActive  Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@unique([parentId, name])
+}
+
+model Product {
+  id           String    @id @default(uuid())
+  name         String
+  description  String?
+  sku          String    @unique
+  barcode      String?   @unique
+  unit         String    @default("PCS")
+
+  // Prices stored as whole rupees (simple for now)
+  costPrice    Int
+  sellingPrice Int
+
+  categoryId   String?
+  category     Category? @relation(fields: [categoryId], references: [id])
+
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  stockItems   StockItem[]
+  stockTxns    StockTxn[]
+}
+
+enum StockTxnType {
+  RECEIVE
+  SALE
+  ADJUST
+  DAMAGE
+}
+
+/**
+ * StockItem = current stock quantity for (branch + product)
+ */
+model StockItem {
+  id        String   @id @default(uuid())
+  branchId  String
+  productId String
+  quantity  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  branch    Branch   @relation(fields: [branchId], references: [id])
+  product   Product  @relation(fields: [productId], references: [id])
+
+  @@unique([branchId, productId])
+}
+
+/**
+ * StockTxn = history of stock changes (audit trail)
+ * qtyChange: + for receive, - for sale/damage, +/- for adjust
+ */
+model StockTxn {
+  id        String       @id @default(uuid())
+  type      StockTxnType
+  branchId  String
+  productId String
+  qtyChange Int
+  note      String?
+  createdAt DateTime     @default(now())
+
+  branch    Branch       @relation(fields: [branchId], references: [id])
+  product   Product      @relation(fields: [productId], references: [id])
+
+  createdById String
+  createdBy   User       @relation(fields: [createdById], references: [id])
 }

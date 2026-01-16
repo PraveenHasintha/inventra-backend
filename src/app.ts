@@ -9,17 +9,25 @@ import morgan from "morgan";
 import { healthRouter } from "./routes/health.routes";
 import { authRouter } from "./routes/auth.routes";
 import { usersRouter } from "./routes/users.routes";
+import { branchesRouter } from "./routes/branches.routes";
+import { categoriesRouter } from "./routes/categories.routes";
+import { productsRouter } from "./routes/products.routes";
+import { inventoryRouter } from "./routes/inventory.routes";
 
 export const app = express();
 
-app.use(helmet()); // security headers
-app.use(cors({ origin: ["http://localhost:3000"], credentials: false })); // allow frontend
-app.use(morgan("dev")); // request log
-app.use(express.json()); // parse JSON body
+app.use(helmet());
+app.use(cors({ origin: ["http://localhost:3000"], credentials: false }));
+app.use(morgan("dev"));
+app.use(express.json());
 
 app.use(healthRouter);
 app.use(authRouter);
 app.use(usersRouter);
+app.use(branchesRouter);
+app.use(categoriesRouter);
+app.use(productsRouter);
+app.use(inventoryRouter);
 
 // simple error handler
 app.use((err: any, _req: any, res: any, _next: any) => {
