@@ -1,3 +1,4 @@
+// inventra-backend/src/routes/inventory.routes.ts
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db";
@@ -168,6 +169,50 @@ const reduceSchema = z.object({
   note: z.string().optional(),
 });
 
+async function reduceStockOr409(args: {
+  branchId: string;
+  productId: string;
+  quantity: number;
+  note?: string;
+  type: "SALE" | "DAMAGE";
+  createdById: string;
+}) {
+  const { branchId, productId, quantity, note, type, createdById } = args;
+
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.stockItem.findUnique({
+      where: { branchId_productId: { branchId, productId } },
+    });
+
+    const oldQty = existing?.quantity ?? 0;
+    if (!existing || oldQty < quantity) {
+      // Tell caller to return 409
+      const err: any = new Error(`Not enough stock. Available: ${oldQty}`);
+      err.code = "INSUFFICIENT_STOCK";
+      throw err;
+    }
+
+    const item = await tx.stockItem.update({
+      where: { branchId_productId: { branchId, productId } },
+      data: { quantity: { decrement: quantity } },
+      include: { product: true, branch: true },
+    });
+
+    const txn = await tx.stockTxn.create({
+      data: {
+        type,
+        branchId,
+        productId,
+        qtyChange: -quantity,
+        note: note || (type === "SALE" ? "Sale" : "Damaged"),
+        createdById,
+      },
+    });
+
+    return { item, txn };
+  });
+}
+
 /**
  * POST /inventory/sale
  * - Manager sells stock (quantity decreases)
@@ -191,42 +236,17 @@ inventoryRouter.post(
     if (!product) return res.status(404).json({ message: "Product not found" });
 
     try {
-      const result = await prisma.$transaction(async (tx) => {
-        const existing = await tx.stockItem.findUnique({
-          where: { branchId_productId: { branchId, productId } },
-        });
-
-        const oldQty = existing?.quantity ?? 0;
-        if (oldQty < quantity) {
-          throw new Error(`Not enough stock. Available: ${oldQty}`);
-        }
-
-        const item = await tx.stockItem.update({
-          where: { branchId_productId: { branchId, productId } },
-          data: { quantity: { decrement: quantity } },
-          include: { product: true, branch: true },
-        });
-
-        const txn = await tx.stockTxn.create({
-          data: {
-            type: "SALE",
-            branchId,
-            productId,
-            qtyChange: -quantity,
-            note: note || "Sale",
-            createdById: req.user.id,
-          },
-        });
-
-        return { item, txn };
+      const result = await reduceStockOr409({
+        branchId,
+        productId,
+        quantity,
+        note,
+        type: "SALE",
+        createdById: req.user.id,
       });
-
-      res.status(201).json(result);
+      return res.status(201).json(result);
     } catch (e: any) {
-      const msg = e?.message || "Sale failed";
-      if (msg.startsWith("Not enough stock")) {
-        return res.status(409).json({ message: msg });
-      }
+      if (e?.code === "INSUFFICIENT_STOCK") return res.status(409).json({ message: e.message });
       return res.status(500).json({ message: "Server error" });
     }
   }
@@ -255,42 +275,17 @@ inventoryRouter.post(
     if (!product) return res.status(404).json({ message: "Product not found" });
 
     try {
-      const result = await prisma.$transaction(async (tx) => {
-        const existing = await tx.stockItem.findUnique({
-          where: { branchId_productId: { branchId, productId } },
-        });
-
-        const oldQty = existing?.quantity ?? 0;
-        if (oldQty < quantity) {
-          throw new Error(`Not enough stock. Available: ${oldQty}`);
-        }
-
-        const item = await tx.stockItem.update({
-          where: { branchId_productId: { branchId, productId } },
-          data: { quantity: { decrement: quantity } },
-          include: { product: true, branch: true },
-        });
-
-        const txn = await tx.stockTxn.create({
-          data: {
-            type: "DAMAGE",
-            branchId,
-            productId,
-            qtyChange: -quantity,
-            note: note || "Damaged",
-            createdById: req.user.id,
-          },
-        });
-
-        return { item, txn };
+      const result = await reduceStockOr409({
+        branchId,
+        productId,
+        quantity,
+        note,
+        type: "DAMAGE",
+        createdById: req.user.id,
       });
-
-      res.status(201).json(result);
+      return res.status(201).json(result);
     } catch (e: any) {
-      const msg = e?.message || "Damage failed";
-      if (msg.startsWith("Not enough stock")) {
-        return res.status(409).json({ message: msg });
-      }
+      if (e?.code === "INSUFFICIENT_STOCK") return res.status(409).json({ message: e.message });
       return res.status(500).json({ message: "Server error" });
     }
   }
