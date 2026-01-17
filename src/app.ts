@@ -13,6 +13,7 @@ import { branchesRouter } from "./routes/branches.routes";
 import { categoriesRouter } from "./routes/categories.routes";
 import { productsRouter } from "./routes/products.routes";
 import { inventoryRouter } from "./routes/inventory.routes";
+import { salesRouter } from "./routes/sales.routes";
 
 export const app = express();
 
@@ -28,6 +29,7 @@ app.use(branchesRouter);
 app.use(categoriesRouter);
 app.use(productsRouter);
 app.use(inventoryRouter);
+app.use(salesRouter);
 
 // simple error handler
 app.use((err: any, _req: any, res: any, _next: any) => {
