@@ -7,7 +7,7 @@ export const salesRouter = Router();
 
 /**
  * POST /sales/checkout
- * Creates an invoice (INV-0001), invoice items, reduces stock, and logs StockTxn(SALE).
+ * Creates an invoice (INV-000001), invoice items, reduces stock, and logs StockTxn(SALE).
  * Any logged-in user can do checkout (MANAGER or EMPLOYEE).
  */
 const checkoutSchema = z.object({
@@ -41,7 +41,14 @@ salesRouter.post("/sales/checkout", requireAuth, async (req: any, res) => {
       const productIds = [...new Set(items.map((i) => i.productId))];
       const products = await tx.product.findMany({
         where: { id: { in: productIds } },
-        select: { id: true, name: true, sku: true, unit: true, sellingPrice: true, isActive: true },
+        select: {
+          id: true,
+          name: true,
+          sku: true,
+          unit: true,
+          sellingPrice: true,
+          isActive: true,
+        },
       });
 
       const productMap = new Map(products.map((p) => [p.id, p]));
@@ -66,27 +73,20 @@ salesRouter.post("/sales/checkout", requireAuth, async (req: any, res) => {
         }
       }
 
-      // Create invoice record first with placeholder invoiceNo (we will update after we get ID)
+      // ✅ Create invoice record first (no invoiceNo yet)
       const invoice = await tx.invoice.create({
         data: {
-          invoiceNo: "INV-TEMP",
+          invoiceNo: null,
           branchId,
           createdById: req.user.id,
           note: note?.trim() ? note.trim() : null,
           total: 0,
         },
-        select: {
-          id: true,
-          publicId: true,
-          invoiceNo: true,
-          createdAt: true,
-          branch: { select: { id: true, name: true } },
-          createdBy: { select: { id: true, name: true, role: true } },
-        },
+        select: { id: true },
       });
 
-      // Generate invoiceNo: INV-0001 (based on auto-increment invoice.id)
-      const invoiceNo = `INV-${String(invoice.id).padStart(4, "0")}`;
+      // ✅ Best user friendly format: INV-000001 (6 digits)
+      const invoiceNo = `INV-${String(invoice.id).padStart(6, "0")}`;
 
       // Reduce stock + create StockTxn + create InvoiceItems
       let total = 0;
@@ -94,6 +94,7 @@ salesRouter.post("/sales/checkout", requireAuth, async (req: any, res) => {
       for (const it of items) {
         const p = productMap.get(it.productId)!;
         const unitPrice = typeof it.unitPrice === "number" ? it.unitPrice : p.sellingPrice;
+
         const lineTotal = unitPrice * it.qty;
         total += lineTotal;
 
@@ -110,7 +111,7 @@ salesRouter.post("/sales/checkout", requireAuth, async (req: any, res) => {
             branchId,
             productId: it.productId,
             qtyChange: -it.qty,
-            note: invoiceNo, // keep it simple: store invoiceNo as note reference
+            note: invoiceNo, // store invoiceNo as reference
             createdById: req.user.id,
           },
         });

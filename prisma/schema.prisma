@@ -27,19 +27,21 @@ model User {
   updatedAt    DateTime @updatedAt
 
   stockTxns    StockTxn[]
+  invoices     Invoice[]
 }
 
 model Branch {
-  id        String   @id @default(uuid())
-  name      String
-  address   String?
-  phone     String?
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(uuid())
+  name       String
+  address    String?
+  phone      String?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   stockItems StockItem[]
   stockTxns  StockTxn[]
+  invoices   Invoice[]
 }
 
 /**
@@ -81,6 +83,7 @@ model Product {
 
   stockItems   StockItem[]
   stockTxns    StockTxn[]
+  invoiceItems InvoiceItem[]
 }
 
 enum StockTxnType {
@@ -112,17 +115,57 @@ model StockItem {
  * qtyChange: + for receive, - for sale/damage, +/- for adjust
  */
 model StockTxn {
-  id        String       @id @default(uuid())
-  type      StockTxnType
-  branchId  String
-  productId String
-  qtyChange Int
-  note      String?
-  createdAt DateTime     @default(now())
+  id          String       @id @default(uuid())
+  type        StockTxnType
+  branchId    String
+  productId   String
+  qtyChange   Int
+  note        String?
+  createdAt   DateTime     @default(now())
 
-  branch    Branch       @relation(fields: [branchId], references: [id])
-  product   Product      @relation(fields: [productId], references: [id])
+  branch      Branch       @relation(fields: [branchId], references: [id])
+  product     Product      @relation(fields: [productId], references: [id])
 
   createdById String
-  createdBy   User       @relation(fields: [createdById], references: [id])
+  createdBy   User         @relation(fields: [createdById], references: [id])
+}
+
+/**
+ * Invoice = a completed sale record (professional invoice number like INV-000001)
+ *
+ * NOTE: We use an auto-increment Int ID for sequencing.
+ * invoiceNo is generated from that ID (INV-000001, INV-000002, ...).
+ */
+model Invoice {
+  id          Int          @id @default(autoincrement())
+  publicId    String       @unique @default(uuid())
+
+  // ✅ Create first, then update with INV-000001 after we know invoice.id
+  invoiceNo   String?      @unique
+
+  branchId    String
+  branch      Branch       @relation(fields: [branchId], references: [id])
+
+  createdById String
+  createdBy   User         @relation(fields: [createdById], references: [id])
+
+  note        String?
+  total       Int          @default(0)
+  createdAt   DateTime     @default(now())
+
+  items       InvoiceItem[]
+}
+
+model InvoiceItem {
+  id         Int      @id @default(autoincrement())
+
+  invoiceId  Int
+  invoice    Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id])
+
+  qty        Int
+  unitPrice  Int
+  lineTotal  Int
 }
