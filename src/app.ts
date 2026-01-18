@@ -14,6 +14,7 @@ import { categoriesRouter } from "./routes/categories.routes";
 import { productsRouter } from "./routes/products.routes";
 import { inventoryRouter } from "./routes/inventory.routes";
 import { salesRouter } from "./routes/sales.routes";
+import { invoicesRouter } from "./routes/invoices.routes"; // ✅ new
 
 export const app = express();
 
@@ -30,6 +31,7 @@ app.use(categoriesRouter);
 app.use(productsRouter);
 app.use(inventoryRouter);
 app.use(salesRouter);
+app.use(invoicesRouter); // ✅ new
 
 // simple error handler
 app.use((err: any, _req: any, res: any, _next: any) => {
