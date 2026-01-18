@@ -1,4 +1,6 @@
 // inventra-backend/src/routes/inventory.routes.ts
+// Simple words: inventory APIs for stock list + stock in/out + stock history.
+
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db";
@@ -169,6 +171,11 @@ const reduceSchema = z.object({
   note: z.string().optional(),
 });
 
+/**
+ * Helper: reduce stock safely
+ * - Prevents negative stock
+ * - Creates StockTxn (SALE or DAMAGE)
+ */
 async function reduceStockOr409(args: {
   branchId: string;
   productId: string;
@@ -186,7 +193,6 @@ async function reduceStockOr409(args: {
 
     const oldQty = existing?.quantity ?? 0;
     if (!existing || oldQty < quantity) {
-      // Tell caller to return 409
       const err: any = new Error(`Not enough stock. Available: ${oldQty}`);
       err.code = "INSUFFICIENT_STOCK";
       throw err;
