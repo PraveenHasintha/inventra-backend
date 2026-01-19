@@ -1,6 +1,6 @@
 /**
  * app.ts = creates Express app + middlewares + routes.
- * Simple words: Connects all route files to Express.
+ * Keep separate from server.ts for clean structure.
  */
 import express from "express";
 import cors from "cors";
@@ -16,7 +16,7 @@ import { productsRouter } from "./routes/products.routes";
 import { inventoryRouter } from "./routes/inventory.routes";
 import { salesRouter } from "./routes/sales.routes";
 import { invoicesRouter } from "./routes/invoices.routes";
-import { reportsRouter } from "./routes/reports.routes"; // ✅ NEW
+import { reportsRouter } from "./routes/reports.routes"; // ✅ add this
 
 export const app = express();
 
@@ -34,7 +34,7 @@ app.use(productsRouter);
 app.use(inventoryRouter);
 app.use(salesRouter);
 app.use(invoicesRouter);
-app.use(reportsRouter); // ✅ NEW
+app.use(reportsRouter); // ✅ add this
 
 // simple error handler
 app.use((err: any, _req: any, res: any, _next: any) => {

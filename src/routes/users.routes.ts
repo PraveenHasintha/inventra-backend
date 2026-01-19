@@ -1,5 +1,5 @@
 /**
- * users.routes.ts
+ * inventra-backend/src/routes/users.routes.ts
  * Simple words:
  * - Manager can create staff users
  * - Manager can view user list
