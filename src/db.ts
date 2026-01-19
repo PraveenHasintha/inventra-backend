@@ -1,6 +1,6 @@
 /**
  * Prisma client = database connection object.
- * We use this to read/write PostgreSQL.
+ * Simple words: We use this prisma object to read/write the SQLite database.
  */
 import { PrismaClient } from "@prisma/client";
 

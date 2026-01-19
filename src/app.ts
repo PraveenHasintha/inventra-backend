@@ -1,11 +1,12 @@
 /**
  * app.ts = creates Express app + middlewares + routes.
- * Keep separate from server.ts for clean structure.
+ * Simple words: Connects all route files to Express.
  */
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
+
 import { healthRouter } from "./routes/health.routes";
 import { authRouter } from "./routes/auth.routes";
 import { usersRouter } from "./routes/users.routes";
@@ -14,7 +15,8 @@ import { categoriesRouter } from "./routes/categories.routes";
 import { productsRouter } from "./routes/products.routes";
 import { inventoryRouter } from "./routes/inventory.routes";
 import { salesRouter } from "./routes/sales.routes";
-import { invoicesRouter } from "./routes/invoices.routes"; // ✅ new
+import { invoicesRouter } from "./routes/invoices.routes";
+import { reportsRouter } from "./routes/reports.routes"; // ✅ NEW
 
 export const app = express();
 
@@ -31,7 +33,8 @@ app.use(categoriesRouter);
 app.use(productsRouter);
 app.use(inventoryRouter);
 app.use(salesRouter);
-app.use(invoicesRouter); // ✅ new
+app.use(invoicesRouter);
+app.use(reportsRouter); // ✅ NEW
 
 // simple error handler
 app.use((err: any, _req: any, res: any, _next: any) => {
