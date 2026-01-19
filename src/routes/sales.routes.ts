@@ -1,3 +1,6 @@
+// inventra-backend/src/routes/sales.routes.ts
+// Simple words: Billing checkout -> creates invoice, reduces stock, logs StockTxn(SALE), returns invoice for printing.
+
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db";
@@ -73,7 +76,7 @@ salesRouter.post("/sales/checkout", requireAuth, async (req: any, res) => {
         }
       }
 
-      // ✅ Create invoice record first (no invoiceNo yet)
+      // Create invoice record first (no invoiceNo yet)
       const invoice = await tx.invoice.create({
         data: {
           invoiceNo: null,
@@ -85,7 +88,7 @@ salesRouter.post("/sales/checkout", requireAuth, async (req: any, res) => {
         select: { id: true },
       });
 
-      // ✅ Best user friendly format: INV-000001 (6 digits)
+      // Invoice number format: INV-000001 (6 digits)
       const invoiceNo = `INV-${String(invoice.id).padStart(6, "0")}`;
 
       // Reduce stock + create StockTxn + create InvoiceItems
@@ -98,13 +101,11 @@ salesRouter.post("/sales/checkout", requireAuth, async (req: any, res) => {
         const lineTotal = unitPrice * it.qty;
         total += lineTotal;
 
-        // Update stock
         await tx.stockItem.update({
           where: { branchId_productId: { branchId, productId: it.productId } },
           data: { quantity: { decrement: it.qty } },
         });
 
-        // Stock history txn
         await tx.stockTxn.create({
           data: {
             type: "SALE",
@@ -116,7 +117,6 @@ salesRouter.post("/sales/checkout", requireAuth, async (req: any, res) => {
           },
         });
 
-        // Invoice item
         await tx.invoiceItem.create({
           data: {
             invoiceId: invoice.id,
@@ -128,7 +128,7 @@ salesRouter.post("/sales/checkout", requireAuth, async (req: any, res) => {
         });
       }
 
-      // Update invoice with final invoiceNo + total
+      // Update invoice with final invoiceNo + total and return full invoice
       const finalInvoice = await tx.invoice.update({
         where: { id: invoice.id },
         data: { invoiceNo, total },
@@ -139,7 +139,10 @@ salesRouter.post("/sales/checkout", requireAuth, async (req: any, res) => {
           note: true,
           total: true,
           createdAt: true,
-          branch: { select: { id: true, name: true } },
+          branch: {
+            // include shop info for receipt print
+            select: { id: true, name: true, address: true, phone: true },
+          },
           createdBy: { select: { id: true, name: true, role: true } },
           items: {
             select: {
