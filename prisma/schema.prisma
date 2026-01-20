@@ -1,3 +1,4 @@
+// inventra-backend/prisma/schema.prisma
 // This file defines database tables (Prisma schema).
 // We start with User + Role so login works first.
 

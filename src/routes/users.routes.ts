@@ -15,6 +15,10 @@ import { requireAuth, requireRole } from "../middleware/auth";
 
 export const usersRouter = Router();
 
+// NOTE ABOUT SQLITE SEARCH:
+// - Removed `mode: "insensitive"` because it can break on SQLite.
+// - SQLite LIKE is typically case-insensitive for ASCII by default.
+
 /** Create user (manager only) */
 const createUserSchema = z.object({
   name: z.string().min(2),
@@ -29,13 +33,15 @@ usersRouter.post("/users", requireAuth, requireRole("MANAGER"), async (req, res)
 
   const { name, email, password, role } = parsed.data;
 
-  const existing = await prisma.user.findUnique({ where: { email } });
+  const normalizedEmail = email.trim().toLowerCase();
+
+  const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
   if (existing) return res.status(409).json({ message: "Email already exists" });
 
   const passwordHash = await bcrypt.hash(password, 10);
 
   const user = await prisma.user.create({
-    data: { name, email, passwordHash, role },
+    data: { name: name.trim(), email: normalizedEmail, passwordHash, role },
     select: { id: true, name: true, email: true, role: true, isActive: true, createdAt: true },
   });
 
@@ -57,8 +63,8 @@ usersRouter.get("/users", requireAuth, requireRole("MANAGER"), async (req, res) 
   const where: any = {};
   if (search && search.length > 0) {
     where.OR = [
-      { name: { contains: search, mode: "insensitive" } },
-      { email: { contains: search, mode: "insensitive" } },
+      { name: { contains: search } },
+      { email: { contains: search } },
     ];
   }
 
@@ -115,11 +121,19 @@ usersRouter.put("/users/:id", requireAuth, requireRole("MANAGER"), async (req: a
   const updated = await prisma.user.update({
     where: { id: targetId },
     data: {
-      ...(typeof name === "string" ? { name } : {}),
+      ...(typeof name === "string" ? { name: name.trim() } : {}),
       ...(role ? { role } : {}),
       ...(typeof isActive === "boolean" ? { isActive } : {}),
     },
-    select: { id: true, name: true, email: true, role: true, isActive: true, createdAt: true, updatedAt: true },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      isActive: true,
+      createdAt: true,
+      updatedAt: true,
+    },
   });
 
   res.json({ user: updated });
